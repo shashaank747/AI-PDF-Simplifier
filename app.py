@@ -6,6 +6,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from io import BytesIO
 import textwrap
+import base64 # <-- FIX: Moved this import to the top
 
 # ---------------------- PAGE THEME FIX ----------------------
 st.markdown("""
@@ -57,6 +58,19 @@ body, .main {
     padding: 25px;
     margin-top: 20px;
     box-shadow: 4px 4px 12px #d9d9d9, -4px -4px 12px #ffffff;
+}
+
+.neu-button {
+    background: #ffffff !important;
+    padding: 12px 28px !important;
+    border-radius: 40px !important;
+    border: none !important;
+    box-shadow: 4px 4px 12px #d9d9d9, -4px -4px 12px #ffffff !important;
+    font-weight: 600 !important;
+    transition: 0.2s !important;
+}
+.neu-button:hover {
+    box-shadow: inset 4px 4px 12px #d9d9d9, inset -4px -4px 12px #ffffff !important;
 }
 
 textarea, input {
@@ -230,13 +244,14 @@ with col_pdf:
         st.session_state.uploaded_file_obj.seek(0)
         pdf_bytes = st.session_state.uploaded_file_obj.read()
 
-        import base64
+        # base64 import is now at the top of the file
         base64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
 
+        # Using iframe tag, which is generally better supported than embed in Streamlit
         pdf_display = f'''
-            <embed src="data:application/pdf;base64,{base64_pdf}"
-                   width="100%" height="800px" type="application/pdf">
-            </embed>
+            <iframe src="data:application/pdf;base64,{base64_pdf}"
+                     width="100%" height="800px" type="application/pdf">
+            </iframe>
         '''
 
         st.markdown(pdf_display, unsafe_allow_html=True)
@@ -302,4 +317,3 @@ If not found in the PDF, reply:
         st.markdown(st.session_state.chat_answer)
 
     st.markdown("</div>", unsafe_allow_html=True)
-
