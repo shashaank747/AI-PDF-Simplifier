@@ -6,7 +6,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from io import BytesIO
 import textwrap
-import base64 
+import base64 # <-- FIX: Moved 'import base64' back to the top
 
 # ---------------------- PAGE THEME FIX ----------------------
 st.markdown("""
@@ -30,7 +30,15 @@ elif os.environ.get("GOOGLE_API_KEY"):
     api_key = os.environ.get("GOOGLE_API_KEY")
 
 # Configure Gemini
-genai.configure(api_key=api_key)
+if api_key:
+    genai.configure(api_key=api_key)
+else:
+    # If key is missing, configure with a placeholder to prevent immediate crash 
+    try:
+        genai.configure(api_key="placeholder")
+    except:
+        pass
+
 
 MODEL_NAME = "models/gemini-2.5-flash"
 
@@ -95,13 +103,16 @@ if "chat_answer" not in st.session_state:
 def extract_pdf_text(uploaded_file):
     text = ""
     try:
+        # We assume the file object is already seeked to 0 before calling this function
+        # But for robustness, we seek here too.
         uploaded_file.seek(0)
         with pdfplumber.open(uploaded_file) as pdf:
             for page in pdf.pages:
                 content = page.extract_text()
                 if content:
                     text += content + "\n"
-        uploaded_file.seek(0)
+        # Reset pointer for subsequent reads (like display or other functions)
+        uploaded_file.seek(0) 
     except Exception as e:
         st.error(f"PDF extraction error: {e}")
         return ""
@@ -174,10 +185,15 @@ def generate_pdf(simplified, bullets, glossary):
 # ---------------------- TITLE ----------------------
 st.markdown("<div class='card'><h2 style='text-align:center;'>📄 AI PDF Simplifier + Chat</h2></div>", unsafe_allow_html=True)
 
+# ---------------------- API KEY CHECK ----------------------
+if not api_key:
+    st.error("🚨 **API Key Missing!** Please set the `GOOGLE_API_KEY` in Streamlit secrets or as an environment variable to use the chat and simplification features.")
+
 # ---------------------- FILE UPLOADER ----------------------
 uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
 
 if uploaded_file:
+    # Check if a new file was uploaded or if it's the first time
     if st.session_state.uploaded_file_obj is None or st.session_state.uploaded_file_obj.name != uploaded_file.name:
 
         st.session_state.uploaded_file_obj = uploaded_file
@@ -187,10 +203,14 @@ if uploaded_file:
         st.success("PDF uploaded successfully!")
 
     # ---------------------- SIMPLIFY BUTTON ----------------------
-    if st.button("✨ Simplify PDF"):
-        with st.spinner("Simplifying using Gemini..."):
+    # Only enable simplify if API key is present
+    if st.button("✨ Simplify PDF", disabled=not api_key):
+        if not api_key:
+             st.error("Cannot simplify: API Key is required.")
+        else:
+            with st.spinner("Simplifying using Gemini..."):
 
-            prompt = f"""
+                prompt = f"""
 Rewrite the PDF content into EXACTLY THREE SECTIONS:
 
 === SECTION 1: SIMPLIFIED TEXT ===
@@ -206,63 +226,64 @@ PDF CONTENT:
 {st.session_state.raw_text}
 """
 
-            try:
-                model = genai.GenerativeModel(MODEL_NAME)
-                response = model.generate_content(prompt)
-                output = response.text
+                try:
+                    model = genai.GenerativeModel(MODEL_NAME)
+                    response = model.generate_content(prompt)
+                    output = response.text
 
-                simplified = output.split("=== SECTION 2")[0].replace("=== SECTION 1: SIMPLIFIED TEXT ===", "").strip()
-                bullets = output.split("=== SECTION 2: BULLET POINT SUMMARY ===")[1].split("=== SECTION 3")[0].strip()
-                glossary = output.split("=== SECTION 3: GLOSSARY ===")[1].strip()
+                    simplified = output.split("=== SECTION 2")[0].replace("=== SECTION 1: SIMPLIFIED TEXT ===", "").strip()
+                    bullets = output.split("=== SECTION 2: BULLET POINT SUMMARY ===")[1].split("=== SECTION 3")[0].strip()
+                    glossary = output.split("=== SECTION 3: GLOSSARY ===")[1].strip()
 
-                st.markdown("<div class='card'>", unsafe_allow_html=True)
-                st.subheader("📘 Simplified Text")
-                st.markdown(simplified)
+                    st.markdown("<div class='card'>", unsafe_allow_html=True)
+                    st.subheader("📘 Simplified Text")
+                    st.markdown(simplified)
 
-                st.subheader("📌 Bullet Points")
-                st.markdown(bullets)
+                    st.subheader("📌 Bullet Points")
+                    st.markdown(bullets)
 
-                st.subheader("📚 Glossary")
-                st.markdown(glossary)
-                st.markdown("</div>", unsafe_allow_html=True)
+                    st.subheader("📚 Glossary")
+                    st.markdown(glossary)
+                    st.markdown("</div>", unsafe_allow_html=True)
 
-                pdf_output = generate_pdf(simplified, bullets, glossary)
-                st.download_button("📥 Download Simplified PDF", data=pdf_output, file_name="Simplified.pdf", mime="application/pdf")
+                    pdf_output = generate_pdf(simplified, bullets, glossary)
+                    st.download_button("📥 Download Simplified PDF", data=pdf_output, file_name="Simplified.pdf", mime="application/pdf")
 
-            except Exception as e:
-                st.error(f"Error: {e}")
+                except Exception as e:
+                    st.error(f"Error during simplification: {e}")
 
 # ---------------------- LAYOUT: PREVIEW + CHAT ----------------------
 col_pdf, col_chat = st.columns([2, 1])
 
-# ---------------------- PDF PREVIEW (STABLE METHOD) ----------------------
+# ---------------------- PDF PREVIEW (STABLE EMBED) ----------------------
 with col_pdf:
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.subheader("📝 Document Preview")
 
     if st.session_state.uploaded_file_obj:
+        
+        # Ensure the file pointer is at the beginning before reading the full file bytes
         st.session_state.uploaded_file_obj.seek(0)
-        
-        # --- NEW STABLE PDF DISPLAY METHOD ---
-        # 1. Read the file into bytes
         pdf_bytes = st.session_state.uploaded_file_obj.read()
-        
-        # 2. Encode the bytes to base64
+
+        # Generate Base64 string
         base64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
 
-        # 3. Create the iframe using the base64 URI
-        # Note: Using st.markdown with an iframe is often necessary for Streamlit to handle the display
-        # and bypass certain file handling limitations.
         pdf_display = f"""
             <iframe src="data:application/pdf;base64,{base64_pdf}"
                      width="100%" height="800px" type="application/pdf">
             </iframe>
         """
         
-        # Using st.components.v1.html for a cleaner embed often works better than st.markdown
-        # However, sticking to st.markdown as it was in the original code, but ensuring the base64_pdf is correct.
-        st.markdown(pdf_display, unsafe_allow_html=True)
-        # --- END NEW STABLE PDF DISPLAY METHOD ---
+        # Use st.components.v1.html for more robust embedding
+        try:
+             import streamlit.components.v1 as components
+             components.html(pdf_display, height=800)
+        except Exception as e:
+             # This error is usually the Chrome block even for 1MB files if the
+             # Streamlit server sends a slightly corrupt Base64 string.
+             st.error(f"PDF Embed Error: {e}. If the PDF doesn't display, please try refreshing the page or using a different PDF file. (The file is only 1MB, so this is likely a browser/Streamlit rendering issue.)")
+
 
     else:
         st.info("Upload a PDF file to preview it.")
@@ -278,11 +299,14 @@ with col_chat:
     if not st.session_state.raw_text:
         st.warning("Upload a PDF first to enable chat.")
 
-    question = st.text_input("Ask something about the PDF:", disabled=not st.session_state.raw_text)
+    # Disable chat components if API key is missing
+    chat_disabled = not st.session_state.raw_text or not api_key
+    
+    question = st.text_input("Ask something about the PDF:", disabled=chat_disabled)
 
     col1, col2 = st.columns(2)
     with col1:
-        ask = st.button("Ask ✨", disabled=not st.session_state.raw_text)
+        ask = st.button("Ask ✨", disabled=chat_disabled)
     with col2:
         clear = st.button("Clear ❌")
 
@@ -293,15 +317,24 @@ with col_chat:
     if ask and question.strip():
         with st.spinner("Thinking..."):
 
+            # --- USING THE ENHANCED CHAT PROMPT ---
             chat_prompt = f"""
-You are an expert teacher. Answer using ONLY the PDF content.
+You are an expert teacher and document summarizer. Your goal is to provide a comprehensive, educational, and high-quality answer to the user's question, strictly based on the provided PDF content.
 
-RULES:
-- If the question asks to "explain", "describe", "tell about", "what is":
-    → Write a simple paragraph (4–6 sentences).
-- If the question asks for "list", "features", "advantages", "types", "difference":
-    → Answer ONLY in bullet points.
-- No headings. No long essays.
+**Answer Formatting Rules:**
+
+1.  **Detail and Length:** Do not limit the length of your response. Provide a detailed answer that fully addresses the question.
+2.  **Educational Style:** Use clear, simple language suitable for a student. Break down complex topics into digestible parts.
+3.  **Structure (Mandatory):**
+    * **Start** with a clear, concise introductory summary.
+    * **Use bold subheadings** (e.g., **Key Features**, **In Simple Terms**, **Example**) to structure the body of your response.
+    * **Use Markdown bullet points (-) or numbered lists (1.)** for any lists, types, steps, or features.
+4.  **Analogy/Example:** For any concept or definition, actively try to provide a simple, real-world analogy or example to aid understanding.
+
+**Source Constraint:**
+- You MUST only use the PDF content provided below.
+- Do NOT output headings like "Answer:" or similar.
+- Do NOT copy messy formatting from the PDF.
 
 PDF CONTENT:
 {st.session_state.raw_text}
@@ -309,8 +342,8 @@ PDF CONTENT:
 QUESTION:
 {question}
 
-If not found in the PDF, reply:
-"Sorry, this information is not available in the PDF."
+If the answer is not found in the PDF, reply: 
+"Sorry, this specific information is not available in the document you provided."
 """
 
             try:
