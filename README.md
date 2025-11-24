@@ -218,18 +218,6 @@ This extracts all text from any PDF and saves it as a **.txt** file.
 
 ---
 
-# 📸 Screenshots (Optional)
-
-Add images inside a `/screenshots` folder:
-
-```markdown
-![Upload Screen](screenshots/upload.png)
-![Simplified Notes](screenshots/simplified.png)
-![Chat Section](screenshots/chat.png)
-```
-
----
-
 # 🙌 Author
 
 **Shashaank Sajjanar**
