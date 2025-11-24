@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pdfplumber
 import google.generativeai as genai
@@ -21,7 +22,20 @@ st.markdown("""
 # ----------------------------------------------
 # NOTE: In a real environment, the API key should be securely loaded,
 # e.g., using st.secrets or environment variables.
-genai.configure(api_key="AIzaSyB4F55XQePGrPaFARyCa0EeTT9XnG9SLyE") 
+# Secure API Key Handling
+api_key = ""
+
+# 1. Use Streamlit Secrets in deployment
+if "GOOGLE_API_KEY" in st.secrets:
+    api_key = st.secrets["GOOGLE_API_KEY"]
+
+# 2. Use environment variable in local development (optional)
+elif os.environ.get("GOOGLE_API_KEY"):
+    api_key = os.environ.get("GOOGLE_API_KEY")
+
+# Configure Gemini
+genai.configure(api_key=api_key)
+ 
 MODEL_NAME = "models/gemini-2.5-flash"
 
 st.set_page_config(
@@ -354,5 +368,6 @@ If the answer is not found in the PDF, reply:
         st.write("### 🧠 Answer:")
         # Use st.markdown for proper rendering of bolding and bullet points
         st.markdown(st.session_state.chat_answer)
+
 
     st.markdown("</div>", unsafe_allow_html=True)
