@@ -228,11 +228,24 @@ with col_pdf:
 
     if st.session_state.uploaded_file_obj:
         st.session_state.uploaded_file_obj.seek(0)
-        st.pdf(st.session_state.uploaded_file_obj)
+        pdf_bytes = st.session_state.uploaded_file_obj.read()
+
+        import base64
+        base64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+
+        pdf_display = f'''
+            <embed src="data:application/pdf;base64,{base64_pdf}"
+                   width="100%" height="800px" type="application/pdf">
+            </embed>
+        '''
+
+        st.markdown(pdf_display, unsafe_allow_html=True)
+
     else:
         st.info("Upload a PDF file to preview it.")
 
     st.markdown("</div>", unsafe_allow_html=True)
+
 
 # ---------------------- CHAT WITH PDF ----------------------
 with col_chat:
@@ -289,3 +302,4 @@ If not found in the PDF, reply:
         st.markdown(st.session_state.chat_answer)
 
     st.markdown("</div>", unsafe_allow_html=True)
+
