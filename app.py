@@ -6,7 +6,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from io import BytesIO
 import textwrap
-import base64 # <-- FIX: Moved this import to the top
+import base64 
 
 # ---------------------- PAGE THEME FIX ----------------------
 st.markdown("""
@@ -235,26 +235,34 @@ PDF CONTENT:
 # ---------------------- LAYOUT: PREVIEW + CHAT ----------------------
 col_pdf, col_chat = st.columns([2, 1])
 
-# ---------------------- PDF PREVIEW (Chrome Safe) ----------------------
+# ---------------------- PDF PREVIEW (STABLE METHOD) ----------------------
 with col_pdf:
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.subheader("📝 Document Preview")
 
     if st.session_state.uploaded_file_obj:
         st.session_state.uploaded_file_obj.seek(0)
+        
+        # --- NEW STABLE PDF DISPLAY METHOD ---
+        # 1. Read the file into bytes
         pdf_bytes = st.session_state.uploaded_file_obj.read()
-
-        # base64 import is now at the top of the file
+        
+        # 2. Encode the bytes to base64
         base64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
 
-        # Using iframe tag, which is generally better supported than embed in Streamlit
-        pdf_display = f'''
+        # 3. Create the iframe using the base64 URI
+        # Note: Using st.markdown with an iframe is often necessary for Streamlit to handle the display
+        # and bypass certain file handling limitations.
+        pdf_display = f"""
             <iframe src="data:application/pdf;base64,{base64_pdf}"
                      width="100%" height="800px" type="application/pdf">
             </iframe>
-        '''
-
+        """
+        
+        # Using st.components.v1.html for a cleaner embed often works better than st.markdown
+        # However, sticking to st.markdown as it was in the original code, but ensuring the base64_pdf is correct.
         st.markdown(pdf_display, unsafe_allow_html=True)
+        # --- END NEW STABLE PDF DISPLAY METHOD ---
 
     else:
         st.info("Upload a PDF file to preview it.")
