@@ -1,4 +1,7 @@
 streamlit
 google-generativeai
 pdfplumber
+pytesseract
+pdf2image
+Pillow
 reportlab
