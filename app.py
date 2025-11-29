@@ -7,7 +7,6 @@ from reportlab.pdfgen import canvas
 from io import BytesIO
 import textwrap
 import base64
-import streamlit.components.v1 as components
 
 # ---------------------- PAGE THEME FIX ----------------------
 st.markdown("""
@@ -29,11 +28,6 @@ elif os.environ.get("GOOGLE_API_KEY"):
 
 if api_key:
     genai.configure(api_key=api_key)
-else:
-    try:
-        genai.configure(api_key="placeholder")
-    except:
-        pass
 
 MODEL_NAME = "models/gemini-2.5-flash"
 
@@ -43,7 +37,7 @@ st.set_page_config(
     page_icon="📄"
 )
 
-# ---------------------- UI CSS ----------------------
+# ---------------------- PREMIUM UI CSS ----------------------
 st.markdown("""
 <style>
 body, .main { background-color: #f4f7fb !important; }
@@ -88,7 +82,7 @@ def extract_pdf_text(uploaded_file):
     return text
 
 # ---------------------- PDF GENERATOR ----------------------
-def generate_pdf(simplified, bullets, glossary):
+def generate_pdf(summary):
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
 
@@ -96,63 +90,33 @@ def generate_pdf(simplified, bullets, glossary):
     y = height - 50
     line_height = 14
 
-    def heading(text):
-        nonlocal y
-        c.setFont("Helvetica-Bold", 15)
-        c.drawString(40, y, text)
-        y -= 25
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(40, y, "PDF Summary")
+    y -= 30
 
-    def paragraph(text):
-        nonlocal y
-        c.setFont("Helvetica", 11)
-        for line in textwrap.wrap(text, 100):
+    c.setFont("Helvetica", 11)
+
+    for line in summary.split("\n"):
+        wrap = textwrap.wrap(line, 95)
+        for w in wrap:
             if y < 60:
                 c.showPage()
                 y = height - 50
-            c.drawString(40, y, line)
+                c.setFont("Helvetica", 11)
+            c.drawString(40, y, w)
             y -= line_height
-        y -= 10
-
-    def bullet_list(text):
-        nonlocal y
-        c.setFont("Helvetica", 11)
-        items = [line.strip() for line in text.split("\n") if line.strip()]
-        for item in items:
-            clean = item.lstrip("*- ").strip()
-            wrapped = textwrap.wrap(clean, 95)
-
-            if y < 60:
-                c.showPage()
-                y = height - 50
-
-            c.drawString(55, y, f"• {wrapped[0]}")
-            y -= line_height
-
-            for sub in wrapped[1:]:
-                if y < 60:
-                    c.showPage()
-                    y = height - 50
-                c.drawString(75, y, sub)
-                y -= line_height
-        y -= 10
-
-    heading("Simplified PDF Output")
-
-    heading("1. Simplified Text")
-    paragraph(simplified)
-
-    heading("2. Bullet Points Summary")
-    bullet_list(bullets)
-
-    heading("3. Glossary")
-    bullet_list(glossary)
+        y -= 5
 
     c.save()
     buffer.seek(0)
     return buffer
 
+
 # ---------------------- TITLE ----------------------
 st.markdown("<div class='card'><h2 style='text-align:center;'>📄 AI PDF Simplifier + Chat</h2></div>", unsafe_allow_html=True)
+
+if not api_key:
+    st.error("🚨 API Key Missing! Add GOOGLE_API_KEY in Streamlit Secrets.")
 
 # ---------------------- FILE UPLOADER ----------------------
 uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
@@ -161,32 +125,24 @@ if uploaded_file:
     if st.session_state.uploaded_file_obj is None or st.session_state.uploaded_file_obj.name != uploaded_file.name:
 
         st.session_state.uploaded_file_obj = uploaded_file
-        text = extract_pdf_text(uploaded_file)
-        st.session_state.raw_text = text
+        st.session_state.raw_text = extract_pdf_text(uploaded_file)
+
         st.success("PDF uploaded successfully!")
 
     # ---------------------- SIMPLIFY BUTTON ----------------------
     if st.button("✨ Simplify PDF", disabled=not api_key):
-
-        with st.spinner("Simplifying using Gemini..."):
+        with st.spinner("Summarizing using Gemini..."):
 
             prompt = f"""
-Rewrite the PDF content into EXACTLY THREE SECTIONS.
-FOLLOW THIS EXACT FORMAT:
-
-=== SECTION 1: SIMPLIFIED TEXT ===
-<text>
-
-=== SECTION 2: BULLET POINT SUMMARY ===
-<text>
-
-=== SECTION 3: GLOSSARY ===
-<text>
+Generate a detailed summary of this PDF in PURE BULLET POINTS ONLY.
 
 RULES:
-- Do NOT change section titles.
-- No extra headings.
-- No markdown.
+- Use "-" for every bullet.
+- Each bullet MUST be 2–3 lines long.
+- No headings.
+- No sections.
+- No numbering.
+- Only use content from the PDF.
 
 PDF CONTENT:
 {st.session_state.raw_text}
@@ -194,56 +150,25 @@ PDF CONTENT:
 
             try:
                 model = genai.GenerativeModel(MODEL_NAME)
-                response = model.generate_content(prompt)
-                output = response.text.strip()
+                output = model.generate_content(prompt)
+                summary = output.text.strip()
 
-                # ---------------------- SAFE SPLITTING ----------------------
-                simplified = "Simplified text not available."
-                bullets = "Bullet summary not available."
-                glossary = "Glossary not available."
-
-                output_lower = output.lower()
-
-                # SECTION 1
-                if "=== section 2" in output_lower:
-                    simplified = output.split("=== SECTION 2")[0]
-                    simplified = simplified.replace("=== SECTION 1: SIMPLIFIED TEXT ===", "").strip()
-
-                # SECTION 2
-                if "=== SECTION 2: BULLET POINT SUMMARY ===" in output:
-                    try:
-                        bullets = output.split("=== SECTION 2: BULLET POINT SUMMARY ===")[1]\
-                                     .split("=== SECTION 3")[0]\
-                                     .strip()
-                    except:
-                        pass
-
-                # SECTION 3
-                if "=== SECTION 3: GLOSSARY ===" in output:
-                    try:
-                        glossary = output.split("=== SECTION 3: GLOSSARY ===")[1].strip()
-                    except:
-                        pass
-
-                # ---------------------- DISPLAY ----------------------
                 st.markdown("<div class='card'>", unsafe_allow_html=True)
-
-                st.subheader("📘 Simplified Text")
-                st.markdown(simplified)
-
-                st.subheader("📌 Bullet Points")
-                st.markdown(bullets)
-
-                st.subheader("📚 Glossary")
-                st.markdown(glossary)
-
+                st.subheader("📌 Detailed Summary")
+                st.markdown(summary)
                 st.markdown("</div>", unsafe_allow_html=True)
 
-                pdf_output = generate_pdf(simplified, bullets, glossary)
-                st.download_button("📥 Download Simplified PDF", data=pdf_output, file_name="Simplified.pdf", mime="application/pdf")
+                # PDF Download
+                pdf_file = generate_pdf(summary)
+                st.download_button(
+                    "📥 Download Summary PDF",
+                    data=pdf_file,
+                    file_name="PDF_Summary.pdf",
+                    mime="application/pdf"
+                )
 
             except Exception as e:
-                st.error(f"Error during simplification: {e}")
+                st.error(f"Error during summarization: {e}")
 
 # ---------------------- LAYOUT: PREVIEW + CHAT ----------------------
 col_pdf, col_chat = st.columns([2, 1])
@@ -258,14 +183,16 @@ with col_pdf:
         pdf_bytes = st.session_state.uploaded_file_obj.read()
         base64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
 
-        pdf_display = f"""
+        embed = f"""
         <iframe src="data:application/pdf;base64,{base64_pdf}"
-                width="100%" height="800px"></iframe>
+                width="100%" height="800px">
+        </iframe>
         """
 
-        components.html(pdf_display, height=800)
+        st.components.v1.html(embed, height=800)
+
     else:
-        st.info("Upload a PDF to preview it.")
+        st.info("Upload a PDF to preview.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -274,11 +201,7 @@ with col_chat:
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.subheader("💬 Chat With PDF")
 
-    if not st.session_state.raw_text:
-        st.warning("Upload a PDF first to enable chat.")
-
     chat_disabled = not st.session_state.raw_text or not api_key
-    
     question = st.text_input("Ask something about the PDF:", disabled=chat_disabled)
 
     col1, col2 = st.columns(2)
@@ -295,12 +218,12 @@ with col_chat:
         with st.spinner("Thinking..."):
 
             chat_prompt = f"""
-Answer ONLY using the PDF content.
+Answer the user's question ONLY using the PDF content.
 
 RULES:
-- If question asks to explain/describe/what is → write a short paragraph.
-- If question asks to list/features/types/advantages → answer ONLY in bullet points.
-- No headings. No long essays.
+- If question is "Explain / Describe / What is": give a short paragraph.
+- If question is "List / Features / Types / Advantages": answer ONLY in bullet points.
+- No extra information outside the PDF.
 
 PDF CONTENT:
 {st.session_state.raw_text}
@@ -308,14 +231,15 @@ PDF CONTENT:
 QUESTION:
 {question}
 
-If answer is not in the PDF:
+If answer not found in the PDF:
 "Sorry, this information is not available in the PDF."
 """
 
             try:
                 model = genai.GenerativeModel(MODEL_NAME)
-                response = model.generate_content(chat_prompt)
-                st.session_state.chat_answer = response.text
+                result = model.generate_content(chat_prompt)
+                st.session_state.chat_answer = result.text
+
             except Exception as e:
                 st.error(f"Chat error: {e}")
 
